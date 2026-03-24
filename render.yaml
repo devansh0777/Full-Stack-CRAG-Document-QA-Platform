@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: crag-backend
+    runtime: docker
+    plan: free
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    autoDeploy: false
+    envVars:
+      - key: APP_NAME
+        value: CRAG Backend
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "1440"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: crag-postgres
+          property: connectionString
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: EMBEDDING_MODEL
+        value: local-hashing-384
+      - key: UPLOAD_DIR
+        value: uploads
+      - key: ALLOWED_ORIGINS
+        value: https://your-streamlit-app-url.streamlit.app
+      - key: TOP_K
+        value: "5"
+      - key: WEB_SEARCH_RESULTS
+        value: "5"
+      - key: ENABLE_DEBUG_METADATA
+        value: "false"
+
+databases:
+  - name: crag-postgres
+    plan: free
+    databaseName: crag_db
+    user: crag_user
+
