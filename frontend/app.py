@@ -11,6 +11,10 @@ API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 st.set_page_config(page_title="CRAG Assistant", layout="wide")
 
 
+class ApiError(RuntimeError):
+    pass
+
+
 def get_headers():
     token = st.session_state.get("token")
     return {"Authorization": f"Bearer {token}"} if token else {}
@@ -18,13 +22,16 @@ def get_headers():
 
 def api_request(method: str, path: str, **kwargs):
     url = f"{API_BASE_URL}{path}"
-    response = requests.request(method, url, timeout=60, **kwargs)
+    try:
+        response = requests.request(method, url, timeout=60, **kwargs)
+    except requests.RequestException as exc:
+        raise ApiError(f"Could not reach backend at {API_BASE_URL}: {exc}") from exc
     if response.status_code >= 400:
         try:
             detail = response.json().get("detail", response.text)
         except ValueError:
             detail = response.text
-        raise RuntimeError(detail)
+        raise ApiError(str(detail))
     if response.content:
         return response.json()
     return None
@@ -51,10 +58,13 @@ def render_auth():
             password = st.text_input("Password", type="password", key="login_password")
             submitted = st.form_submit_button("Login")
             if submitted:
-                data = api_request("POST", "/auth/login", json={"email": email, "password": password})
-                st.session_state.token = data["access_token"]
-                st.session_state.user = data["user"]
-                st.rerun()
+                try:
+                    data = api_request("POST", "/auth/login", json={"email": email, "password": password})
+                    st.session_state.token = data["access_token"]
+                    st.session_state.user = data["user"]
+                    st.rerun()
+                except ApiError as exc:
+                    st.error(str(exc))
 
     with tab_signup:
         with st.form("signup_form"):
@@ -62,8 +72,11 @@ def render_auth():
             password = st.text_input("Password", type="password", key="signup_password")
             submitted = st.form_submit_button("Create Account")
             if submitted:
-                api_request("POST", "/auth/register", json={"email": email, "password": password})
-                st.success("Account created. Please log in.")
+                try:
+                    api_request("POST", "/auth/register", json={"email": email, "password": password})
+                    st.success("Account created. Please log in.")
+                except ApiError as exc:
+                    st.error(str(exc))
 
 
 def render_sidebar():
@@ -76,7 +89,11 @@ def render_sidebar():
         st.rerun()
 
     st.sidebar.subheader("Conversations")
-    conversations = api_request("GET", "/conversations", headers=get_headers())
+    try:
+        conversations = api_request("GET", "/conversations", headers=get_headers())
+    except ApiError as exc:
+        st.sidebar.error(str(exc))
+        conversations = []
     if st.sidebar.button("New Chat"):
         st.session_state.selected_conversation_id = None
     for conversation in conversations:
@@ -89,11 +106,18 @@ def render_documents():
     upload = st.file_uploader("Upload PDF, DOCX, TXT, or MD", type=["pdf", "docx", "txt", "md"])
     if upload and st.button("Upload Document"):
         files = {"file": (upload.name, upload, upload.type)}
-        api_request("POST", "/documents/upload", headers=get_headers(), files=files)
-        st.success("Document uploaded")
-        st.rerun()
+        try:
+            api_request("POST", "/documents/upload", headers=get_headers(), files=files)
+            st.success("Document uploaded")
+            st.rerun()
+        except ApiError as exc:
+            st.error(str(exc))
 
-    documents = api_request("GET", "/documents", headers=get_headers())
+    try:
+        documents = api_request("GET", "/documents", headers=get_headers())
+    except ApiError as exc:
+        st.error(str(exc))
+        return []
     if not documents:
         st.info("No documents uploaded yet.")
         return documents
@@ -102,8 +126,11 @@ def render_documents():
         cols = st.columns([5, 1])
         cols[0].write(document["filename"])
         if cols[1].button("Delete", key=f"delete_doc_{document['id']}"):
-            api_request("DELETE", f"/documents/{document['id']}", headers=get_headers())
-            st.rerun()
+            try:
+                api_request("DELETE", f"/documents/{document['id']}", headers=get_headers())
+                st.rerun()
+            except ApiError as exc:
+                st.error(str(exc))
     return documents
 
 
@@ -136,17 +163,20 @@ def render_feedback(message_id: int):
         comment = cols[1].text_input("Comment", key=f"comment_{message_id}", label_visibility="collapsed")
         submitted = cols[2].form_submit_button("Send")
         if submitted:
-            api_request(
-                "POST",
-                "/feedback",
-                headers=get_headers(),
-                json={
-                    "message_id": message_id,
-                    "is_positive": sentiment == "Helpful",
-                    "comment": comment or None,
-                },
-            )
-            st.success("Feedback saved")
+            try:
+                api_request(
+                    "POST",
+                    "/feedback",
+                    headers=get_headers(),
+                    json={
+                        "message_id": message_id,
+                        "is_positive": sentiment == "Helpful",
+                        "comment": comment or None,
+                    },
+                )
+                st.success("Feedback saved")
+            except ApiError as exc:
+                st.error(str(exc))
 
 
 def render_chat(documents):
@@ -158,18 +188,21 @@ def render_chat(documents):
     )
 
     if st.session_state.selected_conversation_id:
-        detail = api_request(
-            "GET",
-            f"/conversations/{st.session_state.selected_conversation_id}",
-            headers=get_headers(),
-        )
-        for message in detail["messages"]:
-            with st.chat_message(message["role"]):
-                st.write(message["content"])
-                if message.get("citations"):
-                    render_citations(message["citations"])
-                if message["role"] == "assistant":
-                    render_feedback(message["id"])
+        try:
+            detail = api_request(
+                "GET",
+                f"/conversations/{st.session_state.selected_conversation_id}",
+                headers=get_headers(),
+            )
+            for message in detail["messages"]:
+                with st.chat_message(message["role"]):
+                    st.write(message["content"])
+                    if message.get("citations"):
+                        render_citations(message["citations"])
+                    if message["role"] == "assistant":
+                        render_feedback(message["id"])
+        except ApiError as exc:
+            st.error(str(exc))
 
     question = st.chat_input("Ask something about your documents")
     if question:
@@ -178,9 +211,12 @@ def render_chat(documents):
             "conversation_id": st.session_state.selected_conversation_id,
             "document_ids": selected_ids or None,
         }
-        response = api_request("POST", "/chat/query", headers=get_headers(), json=payload)
-        st.session_state.selected_conversation_id = response["conversation_id"]
-        st.rerun()
+        try:
+            response = api_request("POST", "/chat/query", headers=get_headers(), json=payload)
+            st.session_state.selected_conversation_id = response["conversation_id"]
+            st.rerun()
+        except ApiError as exc:
+            st.error(str(exc))
 
 
 def main():
