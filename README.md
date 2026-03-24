@@ -49,7 +49,8 @@ Render setup:
 1. Push this repo to GitHub.
 2. Create a new Render Blueprint from the repo.
 3. Set `GROQ_API_KEY` in Render.
-4. After Streamlit Cloud gives you the frontend URL, update `ALLOWED_ORIGINS` in Render to that exact app URL.
+4. The backend now normalizes Render Postgres URLs automatically, so `postgres://...` and `postgresql://...` both work.
+5. After Streamlit Cloud gives you the frontend URL, update `ALLOWED_ORIGINS` in Render to that exact app URL.
 
 Backend result:
 - FastAPI API on Render

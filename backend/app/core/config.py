@@ -27,6 +27,17 @@ class Settings(BaseSettings):
     enable_debug_metadata: bool = Field(default=True, alias="ENABLE_DEBUG_METADATA")
 
     @property
+    def sqlalchemy_database_url(self) -> str:
+        url = self.database_url.strip()
+        if url.startswith("postgresql+"):
+            return url
+        if url.startswith("postgres://"):
+            return "postgresql+psycopg://" + url[len("postgres://") :]
+        if url.startswith("postgresql://"):
+            return "postgresql+psycopg://" + url[len("postgresql://") :]
+        return url
+
+    @property
     def allowed_origins(self) -> list[str]:
         return [origin.strip() for origin in self.allowed_origins_raw.split(",") if origin.strip()]
 
@@ -41,4 +52,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-

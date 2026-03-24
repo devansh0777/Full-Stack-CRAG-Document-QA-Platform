@@ -43,4 +43,3 @@ databases:
     plan: free
     databaseName: crag_db
     user: crag_user
-
